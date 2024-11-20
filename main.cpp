@@ -1,116 +1,27 @@
 #include <vector>
 #include <iostream>
 #include <fstream>
+#include <chrono>
+#include <utility>
 
-#include "csvIO.h"
+#include "easyio.h"
 #include "rng.h"
 
 // small program, no danger of namespace pollution. Makes code more readable, good to do.
 using namespace std; 
 
+// taken from https://stackoverflow.com/questions/22387586/measuring-execution-time-of-a-function-in-c
+typedef chrono::high_resolution_clock::time_point TimeVar;
+#define duration(a) chrono::duration<double>(a).count()
+#define timeNow() chrono::high_resolution_clock::now()
 
-// For each given point (x_i, y_i), calculate the distance to the nearest and furthest point.
-// Nearest points will be written to nearest.txt, furthests to furthest.txt. 
-// Prints to stdout the average nearest and furthest distances.
-// Uses standard geometry.
-void basicNearestsAndFurthests(vector<double> x, vector<double> y) {
-    int n = x.size();
-    
-    vector<double> nearests(100000, 0);
-    vector<double> furthests(100000, 0);
-    
-    double avgNearest = 0.0;
-    double avgFurthest = 0.0;
-
-    // iter through all points
-    for (int i = 0; i < n; ++i) {
-        // calc for each point
-        double runningNearest = 10.0;
-        double runningFurthest = -10.0;
-
-        for (int j = 0; j < n; ++j) {
-            // using pythagoras to calculate the difference
-            double ydiff = abs(y[j] - y[i]);
-            double xdiff = abs(x[j] - x[i]);
-
-            double dist = sqrt(pow(ydiff, 2) + pow(xdiff, 2));
-
-            if (dist < runningNearest && i != j) {
-                runningNearest = dist;
-            }
-            if (dist > runningFurthest && i != j) {
-                runningFurthest = dist;
-            }
-        }
-
-        nearests[i] = runningNearest;
-        furthests[i] = runningFurthest;
-
-        // recalc means
-        avgNearest = (avgNearest * i + runningNearest) / (double) (i + 1);
-        avgFurthest = (avgFurthest * i + runningFurthest) / (double) (i + 1);
-    }
-
-    // write to plaintext file
-    utils::csv::outputToTxt("basicNearests.txt", nearests);
-    utils::csv::outputToTxt("basicFurthests.txt", furthests);
-
-    // output averages
-    cout << "mean nearest distance: " << avgNearest << endl
-         << "mean furthest distance: " << avgFurthest << endl;
+template<typename F, typename... Args>
+void funcTime(F func, Args&&... args){
+    TimeVar t1=timeNow();
+    func(std::forward<Args>(args)...);
+    cout << "time taken: " << duration(timeNow()-t1) << endl;
 }
-
-// For each given point (x_i, y_i), calculate the distance to the nearest and furthest point.
-// Nearest points will be written to nearest.txt, furthests to furthest.txt. 
-// Prints to stdout the average nearest and furthest distances.
-// Uses wraparound geometry.
-void wrapAroundNearestsAndFurthests(vector<double> x, vector<double> y) {
-    int n = x.size();
-    
-    vector<double> nearests(100000, 0);
-    vector<double> furthests(100000, 0);
-    
-    double avgNearest = 0.0;
-    double avgFurthest = 0.0;
-
-    // iter through all points
-    for (int i = 0; i < n; ++i) {
-        // calc for each point
-        double runningNearest = 10.0;
-        double runningFurthest = -10.0;
-
-        for (int j = 0; j < n; ++j) {
-            // using pythagoras to calculate the difference
-            double ydiff = abs(y[j] - y[i]);
-            double xdiff = abs(x[j] - x[i]);
-
-            double closestDist = sqrt(pow(min(ydiff, 1 - ydiff), 2) + pow(min(xdiff, 1 - xdiff), 2));
-            double furthestDist = sqrt(pow(max(ydiff, 1 - ydiff), 2) + pow(max(xdiff, 1 - xdiff), 2));
-
-            if (closestDist < runningNearest && i != j) {
-                runningNearest = closestDist;
-            }
-            if (furthestDist > runningFurthest && i != j) {
-                runningFurthest = furthestDist;
-            }
-        }
-
-        nearests[i] = runningNearest;
-        furthests[i] = runningFurthest;
-
-        // recalc means
-        avgNearest = (avgNearest * i + runningNearest) / (double) (i + 1);
-        avgFurthest = (avgFurthest * i + runningFurthest) / (double) (i + 1);
-    }
-
-    // write to plaintext file
-    utils::csv::outputToTxt("basicNearests", nearests);
-    utils::csv::outputToTxt("basicFurthests", furthests);
-
-    // output averages
-    cout << "mean nearest distance: " << avgNearest << endl
-         << "mean furthest distance: " << avgFurthest << endl;
-}
+// end stackoverflow reference
 
 // For each given point (x_i, y_i), calculate the distance to the nearest and furthest point.
 // For calcFunc, pass the function that describes the geometry to use. Basic and wraparound are
@@ -156,13 +67,22 @@ void calcNearestAndFurthestDistances(vector<double> x, vector<double> y, void (*
         furthests[i] = runningFurthest;
 
         // recalc means
-        avgNearest = (avgNearest * i + runningNearest) / (double) (i + 1);
-        avgFurthest = (avgFurthest * i + runningFurthest) / (double) (i + 1);
+        // avgNearest = (avgNearest * i + runningNearest) / (double) (i + 1);
+        // avgFurthest = (avgFurthest * i + runningFurthest) / (double) (i + 1);
     }
 
+    double nearestMean = 0;
+    double furthestMean = 0;
+    for (int i = 0; i < n; ++i) {
+        nearestMean += nearests[i];
+        furthestMean += furthests[i];
+    }
+    avgNearest = nearestMean / n;
+    avgFurthest = furthestMean / n;
+
     // write to plaintext file
-    utils::csv::outputToTxt("basicNearests", nearests);
-    utils::csv::outputToTxt("basicFurthests", furthests);
+    utils::easyio::outputToTxt("basicNearests.txt", nearests);
+    utils::easyio::outputToTxt("basicFurthests.txt", furthests);
 
     // output averages
     cout << "mean nearest distance: " << avgNearest << endl
@@ -218,7 +138,8 @@ int main () {
     // Part 1, 100k randomly initialised points 
     int n = 100000;
     vector<vector<double>> points = randomPoints(n);
-    basicNearestsAndFurthests(points[0], points[1]);
+    
+    funcTime(calcNearestAndFurthestDistances, points[0], points[1], basicGeo);
 
     // Part 2, 100k points using wraparound geometry    
 

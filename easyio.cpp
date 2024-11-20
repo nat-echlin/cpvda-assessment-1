@@ -4,10 +4,10 @@
 #include <cmath>
 #include <vector>
 
-#include "csvIO.h"
+#include "easyio.h"
 
 namespace utils {
-    namespace csv {
+    namespace easyio {
 
         // Writes by reference
         void readCsv(std::istream& in, std::vector<std::vector<double>>& data) {
