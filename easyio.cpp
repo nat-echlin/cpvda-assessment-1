@@ -9,15 +9,19 @@
 namespace utils {
     namespace easyio {
 
-        // Writes by reference
-        void readCsv(std::istream& in, std::vector<std::vector<double>>& data) {
+        void readCsv(const std::string& fileName, std::vector<std::vector<double>>& data) {
+            std::ifstream file(fileName);
+            if (!file.is_open()) {
+                std::cerr << "Error: Could not open file " << fileName << std::endl;
+                exit(1);
+            }
+
             std::string line;
-            
-            while (getline(in, line)) {
+            while (getline(file, line)) {
                 data.push_back({}); // Add a new row
             
                 std::istringstream lineIn(line);
-                int val;
+                double val;
                 
                 while (lineIn >> val) {
                     data.back().push_back(val);
@@ -32,9 +36,11 @@ namespace utils {
                     }
                 }
             }
+
+            file.close();
         }
 
-        void outputToTxt(std::string filename, const std::vector<double>& data) {
+        void outputToTxt(const std::string filename, const std::vector<double>& data) {
             std::ofstream out(filename);
             if (!out.is_open()) {
                 std::cerr << "Failed to open file for writing." << std::endl;

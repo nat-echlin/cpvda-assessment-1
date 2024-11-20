@@ -11,6 +11,7 @@
 using namespace std; 
 
 // taken from https://stackoverflow.com/questions/22387586/measuring-execution-time-of-a-function-in-c
+// changed slightly to give result in seconds rather than nanoseconds
 typedef chrono::high_resolution_clock::time_point TimeVar;
 #define duration(a) chrono::duration<double>(a).count()
 #define timeNow() chrono::high_resolution_clock::now()
@@ -38,7 +39,7 @@ void calcNearestAndFurthestDistances(vector<double> x, vector<double> y, void (*
     double avgNearest = 0.0;
     double avgFurthest = 0.0;
 
-    // contains {nearest dist, furthest dist}. No need to reinitialise ever, just reuse it
+    // contains {nearest dist, furthest dist}. No need to reinitialise ever, just reuse it.
     double res[2];
     
     // iter through all points
@@ -135,13 +136,21 @@ vector<vector<double>> randomPoints(int n) {
 }
 
 int main () {
-    // Part 1, 100k randomly initialised points 
     int n = 100000;
-    vector<vector<double>> points = randomPoints(n);
-    
-    funcTime(calcNearestAndFurthestDistances, points[0], points[1], basicGeo);
 
-    // Part 2, 100k points using wraparound geometry    
+    // 100k randomly initialised points using basic geometry
+        // vector<vector<double>> points = randomPoints(n);
+        
+        // funcTime(
+        //     calcNearestAndFurthestDistances, points[0], points[1], basicGeo
+        // );
+
+    // 100k randomly initialised points using wraparound geometry
+        vector<vector<double>> points = randomPoints(n);
+        
+        funcTime(
+            calcNearestAndFurthestDistances, points[0], points[1], wraparoundGeo
+        );
 
     return 0;
 }
