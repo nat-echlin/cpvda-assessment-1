@@ -3,6 +3,7 @@
 #include <fstream>
 #include <chrono>
 #include <utility>
+#include <omp.h>
 
 #include "easyio.h"
 #include "rng.h"
@@ -24,70 +25,24 @@ void funcTime(F func, Args&&... args){
 }
 // end stackoverflow reference
 
-// For each given point (x_i, y_i), calculate the distance to the nearest and furthest point.
-// For calcFunc, pass the function that describes the geometry to use. Basic and wraparound are
-// both given in this file.
-// 
-// Nearest points will be written to nearest.txt, furthests to furthest.txt. 
-// Prints to stdout the average nearest and furthest distances.
-void calcNearestAndFurthestDistances(vector<double> x, vector<double> y, void (*calcFunc)(double, double, double[])) {
-    int n = x.size();
+// Returns 100k randomly initialised points, from 0.0 to 1.0 in the x & y direction. 
+// In the format of {{x_1, x_2, ..., x_n},  {y_1, y_2, ..., x_n}}
+// int n : the number of points to create
+vector<vector<double>> randomPoints(int n) {
+    double start = 0;
+    double end = 1;
     
-    vector<double> nearests(n, 0);
-    vector<double> furthests(n, 0);
-    
-    double avgNearest = 0.0;
-    double avgFurthest = 0.0;
+    vector<double> x(n, start);
+    vector<double> y(n, start);
 
-    // contains {nearest dist, furthest dist}. No need to reinitialise ever, just reuse it.
-    double res[2];
-    
-    // iter through all points
     for (int i = 0; i < n; ++i) {
-        // calc for each point
-        double runningNearest = 10.0;
-        double runningFurthest = -10.0;
-
+        // gen a random x and y coord
         
-        for (int j = 0; j < n; ++j) {
-            // using pythagoras to calculate the difference
-            double ydiff = abs(y[j] - y[i]);
-            double xdiff = abs(x[j] - x[i]);
-
-            calcFunc(xdiff, ydiff, res);
-            
-            if (res[0] < runningNearest && i != j) {
-                runningNearest = res[0];
-            }
-            if (res[1] > runningFurthest && i != j) {
-                runningFurthest = res[1];
-            }
-        }
-
-        nearests[i] = runningNearest;
-        furthests[i] = runningFurthest;
-
-        // recalc means
-        // avgNearest = (avgNearest * i + runningNearest) / (double) (i + 1);
-        // avgFurthest = (avgFurthest * i + runningFurthest) / (double) (i + 1);
+        x[i] = utils::rand::randDouble(start, end);
+        y[i] = utils::rand::randDouble(start, end);
     }
 
-    double nearestMean = 0;
-    double furthestMean = 0;
-    for (int i = 0; i < n; ++i) {
-        nearestMean += nearests[i];
-        furthestMean += furthests[i];
-    }
-    avgNearest = nearestMean / n;
-    avgFurthest = furthestMean / n;
-
-    // write to plaintext file
-    utils::easyio::outputToTxt("basicNearests.txt", nearests);
-    utils::easyio::outputToTxt("basicFurthests.txt", furthests);
-
-    // output averages
-    cout << "mean nearest distance: " << avgNearest << endl
-         << "mean furthest distance: " << avgFurthest << endl;
+    return vector<vector<double>> {x, y};
 }
 
 // Calculates the shortest and longest distance, given the x and y distances, between two points.
@@ -115,43 +70,189 @@ void basicGeo(double xdiff, double ydiff, double arr[]) {
     arr[1] = dist;
 }
 
-// Returns 100k randomly initialised points, from 0.0 to 1.0 in the x & y direction. 
-// In the format of {{x_1, x_2, ..., x_n},  {y_1, y_2, ..., x_n}}
-// int n : the number of points to create
-vector<vector<double>> randomPoints(int n) {
-    double start = 0;
-    double end = 1;
-    
-    vector<double> x(n, start);
-    vector<double> y(n, start);
+// For each given point (x_i, y_i), calculate the distance to the nearest and furthest point.
+// For calcFunc, pass the function that describes the geometry to use. Basic and wraparound are
+// both given in this file.
+// 
+// Nearest points will be written to nearest.txt, furthests to furthest.txt. 
+// Prints to stdout the average nearest and furthest distances.
+// Calculated in serial.
+void calcNearestAndFurthestDistances_Serial(vector<double> x, vector<double> y, void (*calcFunc)(double, double, double[])) {
+    int n = x.size();
 
+    if (n != y.size()) {
+        throw invalid_argument("x and y must have the same number of elements");
+    }
+    
+    // setup
+    vector<double> nearests(n, 0);
+    vector<double> furthests(n, 0);
+    
+    double avgNearest = 0.0;
+    double avgFurthest = 0.0;
+
+    // contains {nearest dist, furthest dist}. No need to reinitialise ever, just reuse it.
+    double res[2];
+    
+    // iter through all points
     for (int i = 0; i < n; ++i) {
-        // gen a random x and y coord
+        // calc for each point
+        double runningNearest = 1.5; // arbitrary number > sqrt(2)
+        double runningFurthest = -0.1; // arbitrary number < 0
         
-        x[i] = utils::rand::randDouble(start, end);
-        y[i] = utils::rand::randDouble(start, end);
+        for (int j = 0; j < n; ++j) {
+            // calculate euclidean distances in x & y
+            double ydiff = abs(y[j] - y[i]);
+            double xdiff = abs(x[j] - x[i]);
+
+            // pass to calcFunc to compute nearest and furthest distances, basic dependency injection
+            calcFunc(xdiff, ydiff, res);
+            
+            if (res[0] < runningNearest && i != j) {
+                runningNearest = res[0];
+            }
+            if (res[1] > runningFurthest && i != j) {
+                runningFurthest = res[1];
+            }
+        }
+
+        nearests[i] = runningNearest;
+        furthests[i] = runningFurthest;
     }
 
-    return vector<vector<double>> {x, y};
+    double nearestMean = 0;
+    double furthestMean = 0;
+    for (int i = 0; i < n; ++i) {
+        nearestMean += nearests[i];
+        furthestMean += furthests[i];
+    }
+    avgNearest = nearestMean / n;
+    avgFurthest = furthestMean / n;
+
+    // write to plaintext file
+    utils::easyio::outputToTxt("basicNearests.txt", nearests);
+    utils::easyio::outputToTxt("basicFurthests.txt", furthests);
+
+    // output averages
+    cout << "mean nearest distance: " << avgNearest << endl
+         << "mean furthest distance: " << avgFurthest << endl
+         << "\n"; // to make it easier to read multiple outputs at once
 }
 
-int main () {
-    int n = 100000;
+// For each given point (x_i, y_i), calculate the distance to the nearest and furthest point.
+// For calcFunc, pass the function that describes the geometry to use. Basic and wraparound are
+// both given in this file.
+// 
+// Nearest points will be written to nearest.txt, furthests to furthest.txt. 
+// Prints to stdout the average nearest and furthest distances.
+// Calculated using parallelisation from OpenMP.
+void calcNearestAndFurthestDistances_Parallel(vector<double> x, vector<double> y, void (*calcFunc)(double, double, double[])) {
+    int n = x.size();
 
-    // 100k randomly initialised points using basic geometry
-        // vector<vector<double>> points = randomPoints(n);
+    if (n != y.size()) {
+        throw invalid_argument("x and y must have the same number of elements");
+    }
+    
+    // setup
+    vector<double> nearests(n, 0);
+    vector<double> furthests(n, 0);
+    
+    double avgNearest = 0.0;
+    double avgFurthest = 0.0;
+
+    // contains {nearest dist, furthest dist}. No need to reinitialise ever, just reuse it.
+    double res[2];
+    
+    // iter through all points
+    #pragma omp parallel for private(res) // make sure that each thread has its own threadbound`res`
+    for (int i = 0; i < n; ++i) {
+        // calc for each point
+        double runningNearest = 1.5; // arbitrary number > sqrt(2)
+        double runningFurthest = -0.1; // arbitrary number < 0
+        
+        for (int j = 0; j < n; ++j) {
+            // calculate euclidean distances in x & y
+            double ydiff = abs(y[j] - y[i]);
+            double xdiff = abs(x[j] - x[i]);
+
+            // pass to calcFunc to compute nearest and furthest distances, basic dependency injection
+            calcFunc(xdiff, ydiff, res);
+            
+            if (res[0] < runningNearest && i != j) {
+                runningNearest = res[0];
+            }
+            if (res[1] > runningFurthest && i != j) {
+                runningFurthest = res[1];
+            }
+        }
+
+        nearests[i] = runningNearest;
+        furthests[i] = runningFurthest;
+    }
+
+    double nearestMean = 0;
+    double furthestMean = 0;
+    #pragma omp parallel for reduction(+:nearestSum, furthestSum) // prevent race conditions 
+    for (int i = 0; i < n; ++i) {
+        nearestMean += nearests[i];
+        furthestMean += furthests[i];
+    }
+    avgNearest = nearestMean / n;
+    avgFurthest = furthestMean / n;
+
+    // write to plaintext file
+    utils::easyio::outputToTxt("basicNearests.txt", nearests);
+    utils::easyio::outputToTxt("basicFurthests.txt", furthests);
+
+    // output averages
+    cout << "mean nearest distance: " << avgNearest << endl
+         << "mean furthest distance: " << avgFurthest << endl
+         << "\n"; // to make it easier to read multiple outputs at once
+}
+
+
+
+int main () {
+    int n = 1000;
+
+    // vector<vector<double>> points_csvBas;
+    // utils::easyio::readCsv("100000 locations.csv", points_csvBas);
+
+    // for (int i = 0; i < 5; ++i) {
+    //     cout << points_csvBas[0][0] << " " << points_csvBas[i][1] << endl;
+    // }
+
+    // examples
+
+    // n randomly-initialised points, using basic geometry.
+        // vector<vector<double>> points_randBas = randomPoints(n);
         
         // funcTime(
-        //     calcNearestAndFurthestDistances, points[0], points[1], basicGeo
+        //     calcNearestAndFurthestDistances_Serial, points_randBas[0], points_randBas[1], basicGeo
         // );
 
-    // 100k randomly initialised points using wraparound geometry
-        vector<vector<double>> points = randomPoints(n);
+    // n randomly-initialised points, using wraparound geometry.
+        // vector<vector<double>> points_randWrap = randomPoints(n);
         
+        // funcTime(
+        //     calcNearestAndFurthestDistances_Serial, points_randWrap[0], points_randWrap[1], wraparoundGeo
+        // );
+
+    // n csv-initialised points, using basic geometry.
+        vector<vector<double>> points_csvBas;
+        utils::easyio::readCsv("100000 locations.csv", points_csvBas);
+
         funcTime(
-            calcNearestAndFurthestDistances, points[0], points[1], wraparoundGeo
+            calcNearestAndFurthestDistances_Serial, points_csvBas[0], points_csvBas[1], basicGeo
         );
 
-    
+    // n csv-initialised points, using wraparound geometry.
+        vector<vector<double>> points_csvWrap;
+        utils::easyio::readCsv("100000 locations.csv", points_csvWrap);
+
+        funcTime(
+            calcNearestAndFurthestDistances_Serial, points_csvWrap[0], points_csvWrap[1], wraparoundGeo
+        );
+
     return 0;
 }
