@@ -37,7 +37,7 @@ void printResults(
     utils::easyio::outputToTxt("basicFurthests.txt", furthests);
 
     string title = "Calculating in " + string(isParallel ? "parallel " : "serial ") +
-                   "using " + string(isWraparoundGeo ? "wraparound geometry" : "serial geometry");
+                   "using " + string(isWraparoundGeo ? "wraparound geometry" : "basic geometry");
 
     // print averages to stdout
     cout << title << endl
@@ -110,9 +110,6 @@ void calcNearestAndFurthestDistances_Serial(
     vector<double> nearests(n, 0);
     vector<double> furthests(n, 0);
     
-    double avgNearest = 0.0;
-    double avgFurthest = 0.0;
-
     // contains {nearest dist, furthest dist}. No need to reinitialise ever, just reuse it.
     double res[2];
     
@@ -148,8 +145,8 @@ void calcNearestAndFurthestDistances_Serial(
         nearestMean += nearests[i];
         furthestMean += furthests[i];
     }
-    avgNearest = nearestMean / n;
-    avgFurthest = furthestMean / n;
+    double avgNearest = nearestMean / n;
+    double avgFurthest = furthestMean / n;
 
     // output results
     printResults(nearests, furthests, avgNearest, avgFurthest, false, calcFunc == wraparoundGeo);
@@ -174,9 +171,6 @@ void calcNearestAndFurthestDistances_Parallel(
     // setup
     vector<double> nearests(n, 0);
     vector<double> furthests(n, 0);
-    
-    double avgNearest = 0.0;
-    double avgFurthest = 0.0;
 
     // contains {nearest dist, furthest dist}. No need to reinitialise ever, just reuse it.
     double res[2];
@@ -216,67 +210,236 @@ void calcNearestAndFurthestDistances_Parallel(
         nearestSum += nearests[i];
         furthestSum += furthests[i];
     }
-    avgNearest = nearestSum / n;
-    avgFurthest = furthestSum / n;
+    
+    double avgNearest = nearestSum / n;
+    double avgFurthest = furthestSum / n;
 
     // output results
     printResults(nearests, furthests, avgNearest, avgFurthest, true, calcFunc == wraparoundGeo);
 }
 
+// For each given point (x_i, y_i), calculate the distance to the nearest and furthest point.
+// For calcFunc, pass the function that describes the geometry to use. Basic and wraparound are
+// both given in this file.
+// 
+// Nearest points will be written to nearest.txt, furthests to furthest.txt. 
+// Prints to stdout the average nearest and furthest distances.
+// Calculated in serial.
+// Uses the faster algorithm.
+void calcNearestAndFurthestDistances_Serial_Fast(
+    vector<double> x, vector<double> y, void (*calcFunc)(double, double, double[])
+) {
+    int n = x.size();
 
+    if (n != y.size()) {
+        throw invalid_argument("x and y must have the same number of elements");
+    }
+    
+    // setup
+    vector<double> nearests(n, 1.5);
+    vector<double> furthests(n, -0.1);
+    
+    // contains {nearest dist, furthest dist}. No need to reinitialise ever, just reuse it.
+    double res[2];
+    
+    // iter through all points
+    for (int i = 0; i < n; ++i) {
+        // calc for each pair (i, j)
+        
+        for (int j = i + 1; j < n; ++j) {
+            // calculate euclidean distances in x & y
+            double ydiff = abs(y[j] - y[i]);
+            double xdiff = abs(x[j] - x[i]);
+
+            // pass to calcFunc to compute nearest and furthest distances, basic dependency injection
+            calcFunc(xdiff, ydiff, res);
+            
+            // update min & max for point i
+            if (res[0] < nearests[i]) {
+                nearests[i] = res[0];
+            }
+            if (res[1] > furthests[i]) {
+                furthests[i] = res[1];
+            }
+
+            // update min & max for point j
+            if (res[0] < nearests[j]) {
+                nearests[j] = res[0];
+            }
+            if (res[1] > furthests[j]) {
+                furthests[j] = res[1];
+            }
+        }
+    }
+
+    double nearestMean = 0;
+    double furthestMean = 0;
+    for (int i = 0; i < n; ++i) {
+        nearestMean += nearests[i];
+        furthestMean += furthests[i];
+    }
+    double avgNearest = nearestMean / n;
+    double avgFurthest = furthestMean / n;
+
+    // output results
+    printResults(nearests, furthests, avgNearest, avgFurthest, false, calcFunc == wraparoundGeo);
+}
+
+// For each given point (x_i, y_i), calculate the distance to the nearest and furthest point.
+// For calcFunc, pass the function that describes the geometry to use. Basic and wraparound are
+// both given in this file.
+// 
+// Nearest points will be written to nearest.txt, furthests to furthest.txt. 
+// Prints to stdout the average nearest and furthest distances.
+// Calculated in parallel.
+// Uses the faster algorithm.
+void calcNearestAndFurthestDistances_Parallel_Fast(
+    vector<double> x, vector<double> y, void (*calcFunc)(double, double, double[])
+) {
+    int n = x.size();
+
+    if (n != y.size()) {
+        throw invalid_argument("x and y must have the same number of elements");
+    }
+    
+    // setup
+    vector<double> nearests(n, 1.5);
+    vector<double> furthests(n, -0.1);
+    
+    
+    // iter through all points
+    #pragma omp parallel
+    {
+        // contains {nearest dist, furthest dist}. 
+        // Thread local variable
+        double res[2];
+        
+        #pragma omp for schedule(guided) // guided since later iters have less work to do than earlier iters
+        for (int i = 0; i < n; ++i) {
+            // calc for each pair (i, j)
+        
+            
+            for (int j = i + 1; j < n; ++j) {
+                // calculate euclidean distances in x & y
+                double ydiff = abs(y[j] - y[i]);
+                double xdiff = abs(x[j] - x[i]);
+
+                // pass to calcFunc to compute nearest and furthest distances, basic dependency injection
+                calcFunc(xdiff, ydiff, res);
+                
+                // update min & max for point i
+                // check once outside the critical region, which could be a stale read (ie, there could be
+                // another thread updating this with an even closer / even further distance)
+                // then check again once inside the critical region so that we get a guaranteed read
+                if (res[0] < nearests[i]) {
+                    #pragma omp critical
+                    {
+                        if (res[0] < nearests[i]) {
+                            nearests[i] = res[0];
+                        }
+                    }
+                }
+                if (res[1] > furthests[i]) {
+                    #pragma omp critical
+                    {
+                        if (res[1] > furthests[i]) {
+                            furthests[i] = res[1];
+                        }
+                    }
+                }
+
+                // do the same for point j
+                if (res[0] < nearests[j]) {
+                    #pragma omp critical
+                    {
+                        if (res[0] < nearests[j]) { 
+                            nearests[j] = res[0];
+                        }
+                    }
+                }
+                if (res[1] > furthests[j]) {
+                    #pragma omp critical
+                    {
+                        if (res[1] > furthests[j]) { 
+                            furthests[j] = res[1];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    double nearestMean = 0;
+    double furthestMean = 0;
+    
+    #pragma omp parallel for reduction(+:nearestMean,furthestMean)
+    for (int i = 0; i < n; ++i) {
+        nearestMean += nearests[i];
+        furthestMean += furthests[i];
+    }
+    double avgNearest = nearestMean / n;
+    double avgFurthest = furthestMean / n;
+
+    // output results
+    printResults(nearests, furthests, avgNearest, avgFurthest, true, calcFunc == wraparoundGeo);
+}
 
 int main () {
-    int n = 10000;
+    int n = 20000;
+    
+    vector<vector<double>> pointsRandom = randomPoints(n);
+
+    vector<vector<double>> pointsCSV;
+    utils::easyio::readCsv("1000 locations.csv", pointsCSV);
 
     // examples
+    // SERIAL
 
     // n randomly-initialised points, using basic geometry.
-        // vector<vector<double>> points_randBas = randomPoints(n);
-        
         // funcTime(
-        //     calcNearestAndFurthestDistances_Serial, points_randBas[0], points_randBas[1], basicGeo
+        //     calcNearestAndFurthestDistances_Serial, pointsRandom[0], pointsRandom[1], basicGeo
         // );
 
     // n randomly-initialised points, using wraparound geometry.
-        // vector<vector<double>> points_randWrap = randomPoints(n);
-        
         // funcTime(
-        //     calcNearestAndFurthestDistances_Serial, points_randWrap[0], points_randWrap[1], wraparoundGeo
+        //     calcNearestAndFurthestDistances_Serial, pointsRandom[0], pointsRandom[1], wraparoundGeo
         // );
 
     // n csv-initialised points, using basic geometry.
-        // vector<vector<double>> points_csvBas;
-        // utils::easyio::readCsv("100000 locations.csv", points_csvBas);
-
         // funcTime(
-        //     calcNearestAndFurthestDistances_Serial, points_csvBas[0], points_csvBas[1], basicGeo
+        //     calcNearestAndFurthestDistances_Serial, pointsCSV[0], pointsCSV[1], basicGeo
         // );
 
     // n csv-initialised points, using wraparound geometry.
-        // vector<vector<double>> points_csvWrap;
-        // utils::easyio::readCsv("100000 locations.csv", points_csvWrap);
-
         // funcTime(
-        //     calcNearestAndFurthestDistances_Serial, points_csvWrap[0], points_csvWrap[1], wraparoundGeo
+        //     calcNearestAndFurthestDistances_Serial, pointsCSV[0], pointsCSV[1], wraparoundGeo
+        // );
+
+    // PARALLELISATION
+    
+    // n randomly-initialised points, using basic geometry.        
+        // funcTime(
+        //     calcNearestAndFurthestDistances_Parallel, pointsRandom[0], pointsRandom[1], basicGeo
+        // );
+
+    // n randomly-initialised points, using wraparound geometry.        
+        // funcTime(
+        //     calcNearestAndFurthestDistances_Parallel, pointsRandom[0], pointsRandom[1], wraparoundGeo
         // );
 
 
+    // USING FAST ALGO
+        funcTime(
+            calcNearestAndFurthestDistances_Serial_Fast, pointsRandom[0], pointsRandom[1], basicGeo
+        );
 
-    // USING PARALLELISATION
+        funcTime(
+            calcNearestAndFurthestDistances_Parallel_Fast, pointsRandom[0], pointsRandom[1], basicGeo
+        );
     
-    // n randomly-initialised points, using basic geometry.
-        vector<vector<double>> points_randBas = randomPoints(n);
-        
-        funcTime(
-            calcNearestAndFurthestDistances_Parallel, points_randBas[0], points_randBas[1], basicGeo
-        );
-
-    // n randomly-initialised points, using wraparound geometry.
-        vector<vector<double>> points_randWrap = randomPoints(n);
-        
-        funcTime(
-            calcNearestAndFurthestDistances_Parallel, points_randWrap[0], points_randWrap[1], wraparoundGeo
-        );
+    
+    // extrapolate as needed
+    // ...
 
     return 0;
 }
