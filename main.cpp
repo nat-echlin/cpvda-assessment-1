@@ -7,6 +7,7 @@
 
 #include "easyio.h"
 #include "rng.h"
+#include "grid.h"
 
 // small program, no danger of namespace pollution. Makes code more readable, good to do.
 using namespace std; 
@@ -78,11 +79,10 @@ void wraparoundGeo(double xdiff, double ydiff, double arr[]) {
     arr[1] = furthestDist;
 }
 
-// Calculates the shortest and longest distance, given the x and y distances, between two points.
-// Places the shortest distance in arr[0], the longest distance in arr[1]. 
+// Calculates the Euclidean distance between two points, given the x and y distances between them.
+// The distance is placed in both arr[0] and arr[1]. 
 // 
 // arr[0] must have size >= 2.
-// Uses basic geometry.
 void basicGeo(double xdiff, double ydiff, double arr[]) {
     double dist = sqrt(pow(ydiff, 2) + pow(xdiff, 2));
     
@@ -314,7 +314,7 @@ void calcNearestAndFurthestDistances_Parallel_Fast(
         // Thread local variable
         double res[2];
         
-        #pragma omp for schedule(guided) // guided since later iters have less work to do than earlier iters
+        #pragma omp for schedule(dynamic, 32) // dynamic over guided, explained in report
         for (int i = 0; i < n; ++i) {
             // calc for each pair (i, j)
         
@@ -384,8 +384,30 @@ void calcNearestAndFurthestDistances_Parallel_Fast(
     printResults(nearests, furthests, avgNearest, avgFurthest, true, calcFunc == wraparoundGeo);
 }
 
+// Uses the grid method defined in grid.cpp to calculate nearests
+void calculateNearestsWithGridMethod(
+    vector<double> x, vector<double> y
+) {
+    int n = x.size();
+    
+    gridmthd::Grid grid = gridmthd::buildGrid(x, y);
+    pair<vector<double>, vector<double>> res = gridmthd::calculateDistancesWithGrid(grid);
+
+    double nearestMean = 0;
+    double furthestMean = 0;
+    for (int i = 0; i < n; ++i) {
+        nearestMean += res.first[i];
+        furthestMean += res.second[i];
+    }
+
+    double avgNearest = nearestMean / n;
+    double avgFurthest = furthestMean / n;
+
+    cout << "mean nearest: " << avgNearest << " mean furthest: " << avgFurthest << endl;
+}
+
 int main () {
-    int n = 20000;
+    int n = 100000;
     
     vector<vector<double>> pointsRandom = randomPoints(n);
 
@@ -393,6 +415,7 @@ int main () {
     utils::easyio::readCsv("1000 locations.csv", pointsCSV);
 
     // examples
+    
     // SERIAL
 
     // n randomly-initialised points, using basic geometry.
@@ -410,11 +433,6 @@ int main () {
         //     calcNearestAndFurthestDistances_Serial, pointsCSV[0], pointsCSV[1], basicGeo
         // );
 
-    // n csv-initialised points, using wraparound geometry.
-        // funcTime(
-        //     calcNearestAndFurthestDistances_Serial, pointsCSV[0], pointsCSV[1], wraparoundGeo
-        // );
-
     // PARALLELISATION
     
     // n randomly-initialised points, using basic geometry.        
@@ -422,24 +440,22 @@ int main () {
         //     calcNearestAndFurthestDistances_Parallel, pointsRandom[0], pointsRandom[1], basicGeo
         // );
 
-    // n randomly-initialised points, using wraparound geometry.        
+    // USING FASTER ALGO
+        
         // funcTime(
-        //     calcNearestAndFurthestDistances_Parallel, pointsRandom[0], pointsRandom[1], wraparoundGeo
+        //     calcNearestAndFurthestDistances_Serial_Fast, pointsRandom[0], pointsRandom[1], basicGeo
         // );
 
-
-    // USING FAST ALGO
-        funcTime(
-            calcNearestAndFurthestDistances_Serial_Fast, pointsRandom[0], pointsRandom[1], basicGeo
-        );
-
-        funcTime(
-            calcNearestAndFurthestDistances_Parallel_Fast, pointsRandom[0], pointsRandom[1], basicGeo
-        );
+        // funcTime(
+        //     calcNearestAndFurthestDistances_Parallel_Fast, pointsRandom[0], pointsRandom[1], basicGeo
+        // );    
     
+    // USING GRID METHOD
     
-    // extrapolate as needed
-    // ...
+        // funcTime(
+        //     calculateNearestsWithGridMethod, pointsRandom[0], pointsRandom[1]
+        // );
 
+    
     return 0;
 }
