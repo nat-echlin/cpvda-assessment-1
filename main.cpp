@@ -28,7 +28,7 @@ void funcTime(F func, Args&&... args){
 }
 // end stackoverflow reference
 
-// Write extended results to plaintext files, and print titled averages.
+// write extended results to plaintext files, and print titled averages.
 void printResults(
     vector<double> &nearests, vector<double> &furthests, double avgNearest, double avgFurthest,
     bool isParallel, bool isWraparoundGeo
@@ -68,12 +68,20 @@ vector<vector<double>> randomPoints(int n) {
 
 // Calculates the shortest and longest distance, given the x and y distances, between two points.
 // Places the shortest distance in arr[0], the longest distance in arr[1]. 
+// Returns the distances squared. 
 // 
 // arr[0] must have size >= 2.
 // Uses wraparound geometry.
 void wraparoundGeo(double xdiff, double ydiff, double arr[]) {
-    double closestDist = sqrt(pow(min(ydiff, 1 - ydiff), 2) + pow(min(xdiff, 1 - xdiff), 2));
-    double furthestDist = sqrt(pow(max(ydiff, 1 - ydiff), 2) + pow(max(xdiff, 1 - xdiff), 2));
+    double dy = min(ydiff, 1 - ydiff);
+    double dx = min(xdiff, 1 - xdiff);
+    
+    double closestDist = dy * dy + dx * dx;
+
+    dy = max(ydiff, 1 - ydiff);
+    dx = max(xdiff, 1 - xdiff);
+
+    double furthestDist = dy * dy + dx * dx;
 
     arr[0] = closestDist;
     arr[1] = furthestDist;
@@ -81,10 +89,11 @@ void wraparoundGeo(double xdiff, double ydiff, double arr[]) {
 
 // Calculates the Euclidean distance between two points, given the x and y distances between them.
 // The distance is placed in both arr[0] and arr[1]. 
+// Returns the distances squared. 
 // 
 // arr[0] must have size >= 2.
 void basicGeo(double xdiff, double ydiff, double arr[]) {
-    double dist = sqrt(pow(ydiff, 2) + pow(xdiff, 2));
+    double dist = ydiff * ydiff + xdiff * xdiff;
     
     arr[0] = dist;
     arr[1] = dist;
@@ -116,8 +125,8 @@ void calcNearestAndFurthestDistances_Serial(
     // iter through all points
     for (int i = 0; i < n; ++i) {
         // calc for each point
-        double runningNearest = 1.5; // arbitrary number > sqrt(2)
-        double runningFurthest = -0.1; // arbitrary number < 0
+        double runningNearestSquared = 2.1; // arbitrary number > sqrt(2) ** 2 = 2
+        double runningFurthestSquared = -0.1; // arbitrary number < 0
         
         for (int j = 0; j < n; ++j) {
             // calculate euclidean distances in x & y
@@ -127,16 +136,16 @@ void calcNearestAndFurthestDistances_Serial(
             // pass to calcFunc to compute nearest and furthest distances, basic dependency injection
             calcFunc(xdiff, ydiff, res);
             
-            if (res[0] < runningNearest && i != j) {
-                runningNearest = res[0];
+            if (res[0] < runningNearestSquared && i != j) {
+                runningNearestSquared = res[0];
             }
-            if (res[1] > runningFurthest && i != j) {
-                runningFurthest = res[1];
+            if (res[1] > runningFurthestSquared && i != j) {
+                runningFurthestSquared = res[1];
             }
         }
 
-        nearests[i] = runningNearest;
-        furthests[i] = runningFurthest;
+        nearests[i] = sqrt(runningNearestSquared);
+        furthests[i] = sqrt(runningFurthestSquared);
     }
 
     double nearestMean = 0;
@@ -179,9 +188,9 @@ void calcNearestAndFurthestDistances_Parallel(
     #pragma omp parallel for private(res) // make sure that each thread has its own threadbound`res`
     for (int i = 0; i < n; ++i) {
         // calc for each point
-        double runningNearest = 1.5; // arbitrary number > sqrt(2)
-        double runningFurthest = -0.1; // arbitrary number < 0
-        
+        double runningNearestSquared = 2.1; // arbitrary number > sqrt(2) ** 2 = 2
+        double runningFurthestSquared = -0.1; // arbitrary number < 0
+
         for (int j = 0; j < n; ++j) {
             // calculate euclidean distances in x & y
             double ydiff = abs(y[j] - y[i]);
@@ -190,16 +199,16 @@ void calcNearestAndFurthestDistances_Parallel(
             // pass to calcFunc to compute nearest and furthest distances, basic dependency injection
             calcFunc(xdiff, ydiff, res);
             
-            if (res[0] < runningNearest && i != j) {
-                runningNearest = res[0];
+            if (res[0] < runningNearestSquared && i != j) {
+                runningNearestSquared = res[0];
             }
-            if (res[1] > runningFurthest && i != j) {
-                runningFurthest = res[1];
+            if (res[1] > runningFurthestSquared && i != j) {
+                runningFurthestSquared = res[1];
             }
         }
 
-        nearests[i] = runningNearest;
-        furthests[i] = runningFurthest;
+        nearests[i] = sqrt(runningNearestSquared);
+        furthests[i] = sqrt(runningFurthestSquared);
     }
 
     // calculate means
@@ -275,6 +284,9 @@ void calcNearestAndFurthestDistances_Serial_Fast(
     double nearestMean = 0;
     double furthestMean = 0;
     for (int i = 0; i < n; ++i) {
+        nearests[i] = sqrt(nearests[i]);
+        furthests[i] = sqrt(furthests[i]);
+
         nearestMean += nearests[i];
         furthestMean += furthests[i];
     }
@@ -374,6 +386,9 @@ void calcNearestAndFurthestDistances_Parallel_Fast(
     
     #pragma omp parallel for reduction(+:nearestMean,furthestMean)
     for (int i = 0; i < n; ++i) {
+        nearests[i] = sqrt(nearests[i]);
+        furthests[i] = sqrt(furthests[i]);
+        
         nearestMean += nearests[i];
         furthestMean += furthests[i];
     }
@@ -407,55 +422,56 @@ void calculateNearestsWithGridMethod(
 }
 
 int main () {
+    cout << fixed << setprecision(10); // print doubles with 10 decimal places
+    
     int n = 100000;
     
     vector<vector<double>> pointsRandom = randomPoints(n);
 
     vector<vector<double>> pointsCSV;
-    utils::easyio::readCsv("1000 locations.csv", pointsCSV);
+    utils::easyio::readCsv("100000 locations.csv", pointsCSV);
 
     // examples
     
-    // SERIAL
+    // // SERIAL
+    // // n randomly-initialised points, using basic geometry.
+    //     funcTime(
+    //         calcNearestAndFurthestDistances_Serial, pointsRandom[0], pointsRandom[1], basicGeo
+    //     );
+    // // n randomly-initialised points, using wraparound geometry.
+    //     funcTime(
+    //         calcNearestAndFurthestDistances_Serial, pointsRandom[0], pointsRandom[1], wraparoundGeo
+    //     );
+    // // n csv-initialised points, using basic geometry.
+    //     funcTime(
+    //         calcNearestAndFurthestDistances_Serial, pointsCSV[0], pointsCSV[1], basicGeo
+    //     );
 
-    // n randomly-initialised points, using basic geometry.
-        // funcTime(
-        //     calcNearestAndFurthestDistances_Serial, pointsRandom[0], pointsRandom[1], basicGeo
-        // );
+    // // PARALLELISATION
+    // // n randomly-initialised points, using basic geometry.        
+    //     funcTime(
+    //         calcNearestAndFurthestDistances_Parallel, pointsRandom[0], pointsRandom[1], basicGeo
+    //     );
 
-    // n randomly-initialised points, using wraparound geometry.
-        // funcTime(
-        //     calcNearestAndFurthestDistances_Serial, pointsRandom[0], pointsRandom[1], wraparoundGeo
-        // );
+    // // USING FASTER ALGO
+    //     funcTime(
+    //         calcNearestAndFurthestDistances_Serial_Fast, pointsRandom[0], pointsRandom[1], basicGeo
+    //     );
 
-    // n csv-initialised points, using basic geometry.
-        // funcTime(
-        //     calcNearestAndFurthestDistances_Serial, pointsCSV[0], pointsCSV[1], basicGeo
-        // );
-
-    // PARALLELISATION
+    //     funcTime(
+    //         calcNearestAndFurthestDistances_Parallel_Fast, pointsRandom[0], pointsRandom[1], basicGeo
+    //     );    
     
-    // n randomly-initialised points, using basic geometry.        
-        // funcTime(
-        //     calcNearestAndFurthestDistances_Parallel, pointsRandom[0], pointsRandom[1], basicGeo
-        // );
+    // // USING GRID METHOD
+    //     funcTime(
+    //         calculateNearestsWithGridMethod, pointsRandom[0], pointsRandom[1]
+    //     );
 
-    // USING FASTER ALGO
-        
-        // funcTime(
-        //     calcNearestAndFurthestDistances_Serial_Fast, pointsRandom[0], pointsRandom[1], basicGeo
-        // );
+    // testing, remove me
+    funcTime(
+        calcNearestAndFurthestDistances_Parallel_Fast, pointsRandom[0], pointsRandom[1], wraparoundGeo
+    );    
 
-        // funcTime(
-        //     calcNearestAndFurthestDistances_Parallel_Fast, pointsRandom[0], pointsRandom[1], basicGeo
-        // );    
-    
-    // USING GRID METHOD
-    
-        // funcTime(
-        //     calculateNearestsWithGridMethod, pointsRandom[0], pointsRandom[1]
-        // );
 
-    
     return 0;
 }

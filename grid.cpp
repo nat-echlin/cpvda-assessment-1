@@ -85,13 +85,14 @@ namespace gridmthd {
                                 
                                 double xdiff = grid[i][j][k].first - grid[l][m][n].first;
                                 double ydiff = grid[i][j][k].second - grid[l][m][n].second;
-                                double dist = sqrt(xdiff * xdiff + ydiff * ydiff);
+                                double disSquared = xdiff * xdiff + ydiff * ydiff;
                                 
-                                runningNearest = min(runningNearest, dist);
+                                runningNearest = min(runningNearest, disSquared);
                             }
                         }
                     }   
-                    nearests.push_back(runningNearest);
+
+                    nearests.push_back(sqrt(runningNearest));
 
                     // find furthest by checking the edge cells
                     double runningFurthest = -1; // arbitrary number < 0
@@ -104,13 +105,13 @@ namespace gridmthd {
                             double xdiff = grid[i][j][k].first - grid[cellInd.first][cellInd.second][l].first;
                             double ydiff = grid[i][j][k].second - grid[cellInd.first][cellInd.second][l].second;
                             
-                            double dist = sqrt(xdiff * xdiff + ydiff * ydiff);
+                            double distSquared = xdiff * xdiff + ydiff * ydiff;
                             
-                            runningFurthest = max(runningFurthest, dist);
+                            runningFurthest = max(runningFurthest, distSquared);
                         }
                     }
 
-                    furthests.push_back(runningFurthest);
+                    furthests.push_back(sqrt(runningFurthest));
                 }
             }
         }    
