@@ -467,11 +467,5 @@ int main () {
     //         calculateNearestsWithGridMethod, pointsRandom[0], pointsRandom[1]
     //     );
 
-    // testing, remove me
-    funcTime(
-        calcNearestAndFurthestDistances_Parallel_Fast, pointsRandom[0], pointsRandom[1], wraparoundGeo
-    );    
-
-
     return 0;
 }
